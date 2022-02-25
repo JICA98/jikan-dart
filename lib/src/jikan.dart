@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:built_collection/built_collection.dart';
 import 'package:built_value/serializer.dart';
@@ -34,6 +36,7 @@ import 'package:jikan_api/src/model/user/friend.dart';
 import 'package:jikan_api/src/model/user/history.dart';
 import 'package:jikan_api/src/model/user/user_item.dart';
 import 'package:jikan_api/src/model/user/user_profile.dart';
+import 'package:retry/retry.dart';
 
 class Jikan {
   Jikan({this.debug = false});
@@ -41,11 +44,19 @@ class Jikan {
   final bool debug;
 
   Future<Map<String, dynamic>> _getResponse(String url) async {
-    http.Response response;
     if (debug) print(baseUrl + url);
-    do {
-      response = await http.get(Uri.parse(baseUrl + url));
-    } while (response.statusCode == 429 || response.statusCode == 500);
+    final r = RetryOptions(maxAttempts: 8);
+    final http.Response response = await r.retry(
+      // Make a GET request
+      () => http
+          .get(Uri.parse(baseUrl + url))
+          .timeout(const Duration(seconds: 5)),
+      // Retry on SocketException or TimeoutException
+      retryIf: (e) {
+        if (debug) print('retrying... on $e');
+        return e is SocketException || e is TimeoutException;
+      },
+    );
 
     return json.decode(response.body);
   }
